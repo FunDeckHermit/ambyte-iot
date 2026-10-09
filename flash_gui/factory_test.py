@@ -235,14 +235,37 @@ def overall_verdict(fw_pass: bool, led_operator: bool | None) -> bool:
 
 def ask_operator_led() -> bool:
     """Blocking y/n prompt. The LED is the one thing the board cannot verify
-    about itself, so this answer is recorded as operator-attested."""
+    about itself, so this answer is recorded as operator-attested. Empty answer
+    defaults to yes."""
     while True:
-        answer = input("Is the red LED lit or blinking? [y/n] ").strip().lower()
-        if answer in ("y", "yes"):
+        answer = input("Is the red LED lit or blinking? [Y/n] ").strip().lower()
+        if answer in ("", "y", "yes"):
             return True
         if answer in ("n", "no"):
             return False
-        print("Please answer y or n.")
+        print("Please answer y or n (or press Enter for yes).")
+
+
+def count_result_rows(logdir: Path) -> int:
+    """Count populated data rows in results.csv (exclude header)."""
+    csv_path = logdir / "results.csv"
+    if not csv_path.exists():
+        return 0
+    with csv_path.open("r", encoding="utf-8") as fh:
+        reader = csv.DictReader(fh)
+        return sum(1 for _ in reader)
+
+
+def print_batch_header(logdir: Path) -> None:
+    """Print a small ASCII-art batch/index header based on the current CSV row count."""
+    row_count = count_result_rows(logdir)
+    batch = row_count // 3 + 1
+    index = row_count % 3 + 1
+    marker = f"{batch}-{index}"
+    box = "=" * (len(marker) + 4)
+    print(box)
+    print(f"| {marker} |")
+    print(box)
 
 
 def write_logs(logdir: Path, result: SelftestResult, *, port: str,
@@ -374,7 +397,7 @@ def connect_console(port: str | None, deadline_s: float, log) -> AmbyteConsole:
 
     Open the board's port and CLASSIFY it instead of blindly waiting: a
     booting board streams log traffic within seconds (prompt follows ~13-15 s
-    into boot), while a chip parked in the ROM downloader is bit-for-bit
+    into boot), while a chip parked in the S3's ROM downloader is bit-for-bit
     silent — so ~10 s of true silence means parked, and another reset goes
     out immediately rather than after a long console deadline. A board that
     arrives already parked is rescued by the same loop."""
@@ -535,6 +558,8 @@ def run(argv: list[str] | None = None) -> int:
 
     def log(msg: str) -> None:
         print(msg, flush=True)
+
+    print_batch_header(args.logdir)
 
     started = time.time()
     flashed_tag: str | None = None
