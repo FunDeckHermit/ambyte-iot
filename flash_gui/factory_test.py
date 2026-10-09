@@ -247,13 +247,21 @@ def ask_operator_led() -> bool:
 
 
 def count_result_rows(logdir: Path) -> int:
-    """Count populated data rows in results.csv (exclude header)."""
+    """Count populated data rows in results.csv (exclude header).
+    Waits if the file is locked."""
     csv_path = logdir / "results.csv"
     if not csv_path.exists():
         return 0
-    with csv_path.open("r", encoding="utf-8") as fh:
-        reader = csv.DictReader(fh)
-        return sum(1 for _ in reader)
+    
+    while True:
+        try:
+            with csv_path.open("r", encoding="utf-8") as fh:
+                reader = csv.DictReader(fh)
+                return sum(1 for _ in reader)
+        except (IOError, OSError):
+            print("results.csv is locked (open in Excel?). Waiting...",
+                  flush=True)
+            time.sleep(2.0)
 
 
 def print_batch_header(logdir: Path) -> None:
@@ -263,9 +271,11 @@ def print_batch_header(logdir: Path) -> None:
     index = row_count % 3 + 1
     marker = f"{batch}-{index}"
     box = "=" * (len(marker) + 4)
+    print()
     print(box)
     print(f"| {marker} |")
     print(box)
+    print()
 
 
 def write_logs(logdir: Path, result: SelftestResult, *, port: str,
@@ -316,22 +326,29 @@ def write_logs(logdir: Path, result: SelftestResult, *, port: str,
 
     csv_path = logdir / "results.csv"
     is_new = not csv_path.exists()
-    with csv_path.open("a", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=CSV_FIELDS)
-        if is_new:
-            writer.writeheader()
-        writer.writerow({
-            "timestamp_utc": record["timestamp_utc"],
-            "mac": result.mac,
-            "fw": result.fw,
-            "overall": record["overall"],
-            "firmware_verdict": record["firmware_verdict"],
-            "led_operator": {True: "yes", False: "no", None: "skipped"}[led_operator],
-            "failed_tests": ";".join(result.failed_names),
-            "operator": operator,
-            "station": station,
-            "json_file": json_path.name,
-        })
+    while True:
+        try:
+            with csv_path.open("a", newline="", encoding="utf-8") as fh:
+                writer = csv.DictWriter(fh, fieldnames=CSV_FIELDS)
+                if is_new:
+                    writer.writeheader()
+                writer.writerow({
+                    "timestamp_utc": record["timestamp_utc"],
+                    "mac": result.mac,
+                    "fw": result.fw,
+                    "overall": record["overall"],
+                    "firmware_verdict": record["firmware_verdict"],
+                    "led_operator": {True: "yes", False: "no", None: "skipped"}[led_operator],
+                    "failed_tests": ";".join(result.failed_names),
+                    "operator": operator,
+                    "station": station,
+                    "json_file": json_path.name,
+                })
+            break
+        except (IOError, OSError):
+            print("results.csv is locked (open in Excel?). Waiting...",
+                  flush=True)
+            time.sleep(2.0)
     return json_path
 
 
